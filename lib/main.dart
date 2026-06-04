@@ -65,6 +65,13 @@ class _TrayController with TrayListener {
           label: isWindowVisible ? 'Hide' : 'Open',
           onClick: (_) => _toggleWindowSafe(),
         ),
+        MenuItem(
+          label: 'Set Shortcut…',
+          onClick: (_) {
+            _clipboardProvider.requestHotKeySetup();
+            _showWindowSafe();
+          },
+        ),
         MenuItem.separator(),
         MenuItem(
           label: 'Clear History',
@@ -87,9 +94,20 @@ class _TrayController with TrayListener {
     unawaited(_toggleWindow());
   }
 
+  void _showWindowSafe() {
+    unawaited(_showWindow());
+  }
+
   Future<void> _toggleWindow() async {
     try {
       await _windowChannel.invokeMethod<void>('toggle');
+    } catch (_) {}
+    await _refreshMenuSafe();
+  }
+
+  Future<void> _showWindow() async {
+    try {
+      await _windowChannel.invokeMethod<void>('show');
     } catch (_) {}
     await _refreshMenuSafe();
   }

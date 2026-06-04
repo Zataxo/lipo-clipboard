@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../provider/clipboard_provider.dart';
@@ -15,6 +16,7 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   final _searchController = TextEditingController();
   final _scrollController = ScrollController();
+  bool _hotKeyDialogOpen = false;
 
   @override
   void dispose() {
@@ -26,6 +28,22 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final provider = context.watch<ClipboardProvider>();
+    if (provider.shouldShowHotKeyDialog && !_hotKeyDialogOpen) {
+      _hotKeyDialogOpen = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => const _HotKeySetupDialog(),
+        );
+        if (mounted) {
+          setState(() {
+            _hotKeyDialogOpen = false;
+          });
+        }
+      });
+    }
 
     return Scaffold(
       body: DecoratedBox(
@@ -91,6 +109,207 @@ class _DashboardPageState extends State<DashboardPage> {
         ),
       ),
     );
+  }
+}
+
+class _HotKeySetupDialog extends StatefulWidget {
+  const _HotKeySetupDialog();
+
+  @override
+  State<_HotKeySetupDialog> createState() => _HotKeySetupDialogState();
+}
+
+class _HotKeySetupDialogState extends State<_HotKeySetupDialog> {
+  final FocusNode _focusNode = FocusNode();
+
+  int? _keyCode;
+  bool _cmd = false;
+  bool _alt = false;
+  bool _ctrl = false;
+  bool _shift = false;
+  String _keyLabel = '';
+  String? _error;
+
+  bool get _hasValidSelection {
+    if (_keyCode == null) return false;
+    if (!(_cmd || _alt || _ctrl || _shift)) return false;
+    if (_keyLabel.trim().isEmpty) return false;
+    return true;
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final content = _hasValidSelection ? _formatDisplay() : 'Press shortcut…';
+
+    return AlertDialog(
+      titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+      contentPadding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
+      actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+      title: const Text('Set Global Shortcut'),
+      content: RawKeyboardListener(
+        focusNode: _focusNode,
+        autofocus: true,
+        onKey: _onKey,
+        child: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Choose the shortcut that will open Lipo from the menu bar.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant.withOpacity(0.85),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 14,
+                ),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest.withOpacity(
+                    theme.brightness == Brightness.dark ? 0.30 : 0.55,
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: theme.colorScheme.outlineVariant.withOpacity(0.85),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.keyboard_rounded,
+                      size: 18,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        content,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Tip: Use at least one modifier (⌘, ⌃, ⌥, ⇧).',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant.withOpacity(0.8),
+                ),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _error!,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.error,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        FilledButton(
+          onPressed: _hasValidSelection ? _save : null,
+          child: const Text('Save Shortcut'),
+        ),
+      ],
+    );
+  }
+
+  void _onKey(RawKeyEvent event) {
+    if (event is! RawKeyDownEvent) return;
+    final data = event.data;
+    if (data is! RawKeyEventDataMacOs) return;
+
+    if (_isModifierOnly(event.logicalKey)) return;
+
+    final cmd = event.isMetaPressed;
+    final alt = event.isAltPressed;
+    final ctrl = event.isControlPressed;
+    final shift = event.isShiftPressed;
+
+    final rawLabel = event.logicalKey.keyLabel;
+    final label = rawLabel.isNotEmpty
+        ? rawLabel.toUpperCase()
+        : (event.logicalKey.debugName ?? 'KeyCode ${data.keyCode}');
+
+    setState(() {
+      _keyCode = data.keyCode;
+      _cmd = cmd;
+      _alt = alt;
+      _ctrl = ctrl;
+      _shift = shift;
+      _keyLabel = label;
+      _error = null;
+      if (!(_cmd || _alt || _ctrl || _shift)) {
+        _error = 'Please include at least one modifier.';
+      }
+    });
+  }
+
+  bool _isModifierOnly(LogicalKeyboardKey key) {
+    return key == LogicalKeyboardKey.shiftLeft ||
+        key == LogicalKeyboardKey.shiftRight ||
+        key == LogicalKeyboardKey.controlLeft ||
+        key == LogicalKeyboardKey.controlRight ||
+        key == LogicalKeyboardKey.altLeft ||
+        key == LogicalKeyboardKey.altRight ||
+        key == LogicalKeyboardKey.metaLeft ||
+        key == LogicalKeyboardKey.metaRight;
+  }
+
+  String _formatDisplay() {
+    final parts = <String>[];
+    if (_cmd) parts.add('⌘');
+    if (_ctrl) parts.add('⌃');
+    if (_alt) parts.add('⌥');
+    if (_shift) parts.add('⇧');
+    parts.add(_keyLabel);
+    return parts.join(' + ');
+  }
+
+  Future<void> _save() async {
+    final keyCode = _keyCode;
+    if (keyCode == null) return;
+
+    final config = HotKeyConfig(
+      keyCode: keyCode,
+      cmd: _cmd,
+      alt: _alt,
+      ctrl: _ctrl,
+      shift: _shift,
+      display: _formatDisplay(),
+    );
+
+    final ok = await context.read<ClipboardProvider>().saveHotKey(config);
+    if (!ok) {
+      if (mounted) {
+        setState(() {
+          _error =
+              'That shortcut could not be registered. Try a different one.';
+        });
+      }
+      return;
+    }
+    if (mounted) Navigator.of(context).pop();
   }
 }
 
