@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 import '../../db/clipboard_item.dart';
@@ -48,6 +49,9 @@ class ClipboardProvider extends ChangeNotifier {
   bool _shouldShowHotKeyDialog = false;
   bool get shouldShowHotKeyDialog => _shouldShowHotKeyDialog;
 
+  int _overlayShowToken = 0;
+  int get overlayShowToken => _overlayShowToken;
+
   int? _recentlyCopiedItemId;
   DateTime? _recentlyCopiedUntil;
   int? get recentlyCopiedItemId =>
@@ -82,6 +86,28 @@ class ClipboardProvider extends ChangeNotifier {
 
   void requestHotKeySetup() {
     _shouldShowHotKeyDialog = true;
+    _notifySafely();
+  }
+
+  void onOverlayShown() {
+    _overlayShowToken++;
+    _notifySafely();
+  }
+
+  void _notifySafely() {
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    final inFrame =
+        phase == SchedulerPhase.persistentCallbacks ||
+        phase == SchedulerPhase.transientCallbacks ||
+        phase == SchedulerPhase.midFrameMicrotasks;
+
+    if (inFrame) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (hasListeners) notifyListeners();
+      });
+      return;
+    }
+
     notifyListeners();
   }
 

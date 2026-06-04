@@ -26,12 +26,17 @@ class AppDelegate: FlutterAppDelegate {
 
   static func toggleMainWindow() {
     guard let window = mainWindow else { return }
+    if let panel = window as? MainFlutterWindow {
+      panel.toggleOverlay()
+      return
+    }
+
     if window.isVisible {
       window.orderOut(nil)
-    } else {
-      window.makeKeyAndOrderFront(nil)
-      NSApp.activate(ignoringOtherApps: true)
+      return
     }
+    window.makeKeyAndOrderFront(nil)
+    NSApp.activate(ignoringOtherApps: true)
   }
 }
 

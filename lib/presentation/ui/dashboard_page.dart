@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:lipo/presentation/ui/app_bar_widget.dart';
 import 'package:provider/provider.dart';
 
 import '../provider/clipboard_provider.dart';
@@ -16,12 +17,15 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   final _searchController = TextEditingController();
   final _scrollController = ScrollController();
+  final _searchFocusNode = FocusNode();
   bool _hotKeyDialogOpen = false;
+  int _lastOverlayToken = 0;
 
   @override
   void dispose() {
     _searchController.dispose();
     _scrollController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -29,6 +33,14 @@ class _DashboardPageState extends State<DashboardPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final provider = context.watch<ClipboardProvider>();
+    if (provider.overlayShowToken != _lastOverlayToken) {
+      _lastOverlayToken = provider.overlayShowToken;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _searchFocusNode.requestFocus();
+        }
+      });
+    }
     if (provider.shouldShowHotKeyDialog && !_hotKeyDialogOpen) {
       _hotKeyDialogOpen = true;
       WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -46,6 +58,7 @@ class _DashboardPageState extends State<DashboardPage> {
     }
 
     return Scaffold(
+      // appBar: buildPremiumAppBar(context),
       body: DecoratedBox(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -87,8 +100,14 @@ class _DashboardPageState extends State<DashboardPage> {
                     padding: const EdgeInsets.all(12),
                     child: Column(
                       children: [
+                        PreferredSize(
+                          preferredSize: const Size.fromHeight(52),
+                          child: buildPremiumAppBar(context),
+                        ),
+                        const SizedBox(height: 10),
                         _Header(
                           controller: _searchController,
+                          focusNode: _searchFocusNode,
                           onChanged: (value) => context
                               .read<ClipboardProvider>()
                               .setSearchQuery(value),
@@ -314,9 +333,14 @@ class _HotKeySetupDialogState extends State<_HotKeySetupDialog> {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.controller, required this.onChanged});
+  const _Header({
+    required this.controller,
+    required this.focusNode,
+    required this.onChanged,
+  });
 
   final TextEditingController controller;
+  final FocusNode focusNode;
   final ValueChanged<String> onChanged;
 
   @override
@@ -327,6 +351,7 @@ class _Header extends StatelessWidget {
         Expanded(
           child: TextField(
             controller: controller,
+            focusNode: focusNode,
             onChanged: onChanged,
             textInputAction: TextInputAction.search,
             decoration: InputDecoration(
@@ -364,6 +389,7 @@ class _Body extends StatelessWidget {
         return Scrollbar(
           controller: scrollController,
           child: ListView.separated(
+            // physics: ClampingScrollPhysics(),
             controller: scrollController,
             padding: const EdgeInsets.symmetric(vertical: 6),
             itemCount: items.length,
@@ -472,8 +498,16 @@ class _ClipboardRowState extends State<_ClipboardRow> {
     );
 
     return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
+      onEnter: (_) {
+        if (!mounted) return;
+        if (_hovered) return;
+        setState(() => _hovered = true);
+      },
+      onExit: (_) {
+        if (!mounted) return;
+        if (!_hovered) return;
+        setState(() => _hovered = false);
+      },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 140),
         curve: Curves.easeOut,
@@ -534,7 +568,6 @@ class _ClipboardRowState extends State<_ClipboardRow> {
                     switchOutCurve: Curves.easeIn,
                     child: widget.showCopied
                         ? _Badge(
-                            key: const ValueKey('copied'),
                             label: 'Copied',
                             background: theme.colorScheme.primary,
                             foreground: theme.colorScheme.onPrimary,
@@ -542,7 +575,6 @@ class _ClipboardRowState extends State<_ClipboardRow> {
                           )
                         : _hovered
                         ? Row(
-                            key: const ValueKey('hover-actions'),
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               _Badge(
@@ -560,11 +592,7 @@ class _ClipboardRowState extends State<_ClipboardRow> {
                               ),
                             ],
                           )
-                        : const SizedBox(
-                            key: ValueKey('idle'),
-                            width: 0,
-                            height: 0,
-                          ),
+                        : const SizedBox(width: 0, height: 0),
                   ),
                 ],
               ),
