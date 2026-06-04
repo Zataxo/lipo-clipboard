@@ -10,12 +10,19 @@ import 'presentation/provider/clipboard_provider.dart';
 import 'presentation/ui/app.dart';
 
 const _windowChannel = MethodChannel('lipo/window');
+const _overlayChannel = MethodChannel('lipo/overlay');
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final clipboardProvider = ClipboardProvider();
   await clipboardProvider.initialize();
+
+  _overlayChannel.setMethodCallHandler((call) async {
+    if (call.method == 'didShow') {
+      clipboardProvider.onOverlayShown();
+    }
+  });
 
   final trayController = _TrayController(clipboardProvider);
   await trayController.initialize();
