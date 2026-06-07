@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/material.dart';
 
+import '../../db/app_settings.dart';
 import '../../db/clipboard_item.dart';
 import '../../db/database_service.dart';
 
@@ -32,6 +34,12 @@ class ClipboardProvider extends ChangeNotifier {
   final DatabaseService _databaseService;
   static const MethodChannel _hotKeyChannel = MethodChannel('lipo/hotkey');
   static const MethodChannel _windowChannel = MethodChannel('lipo/window');
+
+  AppSettings _settings = AppSettings();
+  AppSettings get settings => _settings;
+
+  bool _showSettings = false;
+  bool get showSettings => _showSettings;
 
   final List<ClipboardItem> _items = [];
   String _searchQuery = '';
@@ -74,9 +82,21 @@ class ClipboardProvider extends ChangeNotifier {
 
   int get totalCount => _items.length;
 
+  Color get accentSeedColor => Color(_settings.accentSeedColorValue);
+
+  List<AccentPalette> get accentPalettes => const [
+    AccentPalette('Slate Grey', 0xFF607D8B),
+    AccentPalette('Deep Oceanic Blue', 0xFF1565C0),
+    AccentPalette('Royal Purple', 0xFF6A1B9A),
+    AccentPalette('Forest Green', 0xFF2E7D32),
+    AccentPalette('Minimal Dark', 0xFF212121),
+  ];
+
   Future<void> initialize() async {
     if (_isInitialized) return;
     await _databaseService.init();
+    _settings = await _databaseService.getSettings();
+    await _runCleanupOnLaunch();
     await _loadHotKey();
     await refresh();
     _startClipboardPolling();
@@ -84,8 +104,50 @@ class ClipboardProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void openSettings() {
+    if (_showSettings) return;
+    _showSettings = true;
+    _notifySafely();
+  }
+
+  void closeSettings() {
+    if (!_showSettings) return;
+    _showSettings = false;
+    _notifySafely();
+  }
+
+  Future<void> setMaxItems(int value) async {
+    final next = value.clamp(10, 5000);
+    if (_settings.maxItems == next) return;
+    _settings.maxItems = next;
+    _settings = await _databaseService.upsertSettings(_settings);
+    await _enforceStorageLimit();
+    await refresh();
+  }
+
+  Future<void> setCleanupInterval(CleanupInterval interval) async {
+    if (_settings.cleanupInterval == interval) return;
+    _settings.cleanupInterval = interval;
+    _settings = await _databaseService.upsertSettings(_settings);
+    await _runCleanupOnLaunch();
+    await refresh();
+  }
+
+  Future<void> setAccentSeedColor(int value) async {
+    if (_settings.accentSeedColorValue == value) return;
+    _settings.accentSeedColorValue = value;
+    _settings = await _databaseService.upsertSettings(_settings);
+    _notifySafely();
+  }
+
   void requestHotKeySetup() {
     _shouldShowHotKeyDialog = true;
+    _notifySafely();
+  }
+
+  void dismissHotKeySetup() {
+    if (!_shouldShowHotKeyDialog) return;
+    _shouldShowHotKeyDialog = false;
     _notifySafely();
   }
 
@@ -240,9 +302,30 @@ class ClipboardProvider extends ChangeNotifier {
   }
 
   Future<void> clearAll() async {
-    await _databaseService.clearAll();
+    await _databaseService.clearHistory();
     _items.clear();
     notifyListeners();
+  }
+
+  Future<void> _enforceStorageLimit() async {
+    final limit = _settings.maxItems <= 0 ? 100 : _settings.maxItems;
+    if (_items.length <= limit) return;
+    await _databaseService.enforceStorageLimit(limit);
+  }
+
+  Future<void> _runCleanupOnLaunch() async {
+    final interval = _settings.cleanupInterval;
+    if (interval == CleanupInterval.never) return;
+
+    final now = DateTime.now();
+    final cutoff = switch (interval) {
+      CleanupInterval.daily => now.subtract(const Duration(days: 1)),
+      CleanupInterval.weekly => now.subtract(const Duration(days: 7)),
+      CleanupInterval.monthly => now.subtract(const Duration(days: 30)),
+      CleanupInterval.never => now,
+    };
+
+    await _databaseService.purgeItemsOlderThan(cutoff);
   }
 
   void _startClipboardPolling() {
@@ -260,7 +343,8 @@ class ClipboardProvider extends ChangeNotifier {
         if (saved == null) return;
         _items.removeWhere((e) => e.id == saved.id);
         _items.insert(0, saved);
-        notifyListeners();
+        await _enforceStorageLimit();
+        await refresh();
       } catch (_) {
       } finally {
         _pollInFlight = false;
@@ -273,4 +357,11 @@ class ClipboardProvider extends ChangeNotifier {
     _pollTimer?.cancel();
     super.dispose();
   }
+}
+
+class AccentPalette {
+  const AccentPalette(this.name, this.seedColorValue);
+
+  final String name;
+  final int seedColorValue;
 }
