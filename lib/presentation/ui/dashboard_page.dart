@@ -6,6 +6,7 @@ import 'package:lipo/presentation/ui/app_bar_widget.dart';
 import 'package:provider/provider.dart';
 
 import '../provider/clipboard_provider.dart';
+import 'settings_page.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -37,6 +38,7 @@ class _DashboardPageState extends State<DashboardPage> {
       _lastOverlayToken = provider.overlayShowToken;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
+          provider.closeSettings();
           _searchFocusNode.requestFocus();
         }
       });
@@ -78,6 +80,7 @@ class _DashboardPageState extends State<DashboardPage> {
           ),
         ),
         child: SafeArea(
+          top: false,
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: ClipRRect(
@@ -100,29 +103,117 @@ class _DashboardPageState extends State<DashboardPage> {
                     padding: const EdgeInsets.all(12),
                     child: Column(
                       children: [
-                        PreferredSize(
-                          preferredSize: const Size.fromHeight(52),
-                          child: buildPremiumAppBar(context),
-                        ),
-                        const SizedBox(height: 10),
-                        _Header(
-                          controller: _searchController,
-                          focusNode: _searchFocusNode,
-                          onChanged: (value) => context
-                              .read<ClipboardProvider>()
-                              .setSearchQuery(value),
-                        ),
+                        provider.showSettings
+                            ? _PreferencesHeader(onBack: provider.closeSettings)
+                            : buildPremiumAppBar(
+                                context,
+                                onSettingsPressed: provider.openSettings,
+                              ),
                         const SizedBox(height: 10),
                         Expanded(
-                          child: _Body(scrollController: _scrollController),
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 180),
+                            switchInCurve: Curves.easeOut,
+                            switchOutCurve: Curves.easeIn,
+                            transitionBuilder: (child, animation) {
+                              final offsetTween = Tween<Offset>(
+                                begin: const Offset(0.02, 0),
+                                end: Offset.zero,
+                              );
+                              return FadeTransition(
+                                opacity: animation,
+                                child: SlideTransition(
+                                  position: animation.drive(offsetTween),
+                                  child: child,
+                                ),
+                              );
+                            },
+                            child: provider.showSettings
+                                ? const SettingsPage()
+                                : Column(
+                                    key: const ValueKey('dashboard'),
+                                    children: [
+                                      _Header(
+                                        controller: _searchController,
+                                        focusNode: _searchFocusNode,
+                                        onChanged: (value) => context
+                                            .read<ClipboardProvider>()
+                                            .setSearchQuery(value),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Expanded(
+                                        child: _Body(
+                                          scrollController: _scrollController,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      const _StatusBar(),
+                                    ],
+                                  ),
+                          ),
                         ),
-                        const SizedBox(height: 10),
-                        const _StatusBar(),
                       ],
                     ),
                   ),
                 ),
               ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PreferencesHeader extends StatelessWidget
+    implements PreferredSizeWidget {
+  const _PreferencesHeader({required this.onBack});
+
+  final VoidCallback onBack;
+
+  @override
+  Size get preferredSize => const Size.fromHeight(52);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+        child: Container(
+          height: 52,
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface.withOpacity(
+              theme.brightness == Brightness.dark ? 0.18 : 0.6,
+            ),
+            border: Border(
+              bottom: BorderSide(
+                color: theme.colorScheme.outlineVariant.withOpacity(
+                  theme.brightness == Brightness.dark ? 0.40 : 0.70,
+                ),
+                width: 1,
+              ),
+            ),
+          ),
+          child: SafeArea(
+            bottom: false,
+            child: Row(
+              children: [
+                IconButton(
+                  tooltip: 'Back',
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  onPressed: onBack,
+                ),
+                Text(
+                  'Preferences',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -166,12 +257,26 @@ class _HotKeySetupDialogState extends State<_HotKeySetupDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final content = _hasValidSelection ? _formatDisplay() : 'Press shortcut…';
+    final canClose = context.read<ClipboardProvider>().hotKey != null;
 
     return AlertDialog(
       titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
       contentPadding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
       actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
-      title: const Text('Set Global Shortcut'),
+      title: Row(
+        children: [
+          const Expanded(child: Text('Set Global Shortcut')),
+          if (canClose)
+            IconButton(
+              tooltip: 'Close',
+              onPressed: () {
+                context.read<ClipboardProvider>().dismissHotKeySetup();
+                Navigator.of(context).pop();
+              },
+              icon: const Icon(Icons.close_rounded),
+            ),
+        ],
+      ),
       content: RawKeyboardListener(
         focusNode: _focusNode,
         autofocus: true,

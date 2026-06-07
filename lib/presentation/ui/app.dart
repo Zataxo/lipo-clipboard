@@ -1,31 +1,39 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'dashboard_page.dart';
+
+import '../provider/clipboard_provider.dart';
 
 class LipoApp extends StatelessWidget {
   const LipoApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Lipo',
-      themeMode: ThemeMode.system,
-      theme: _lightTheme(),
-      darkTheme: _darkTheme(),
-      home: const DashboardPage(),
-      builder: (context, child) {
-        final view = MediaQuery.of(context);
-        return MediaQuery(
-          data: view.copyWith(textScaler: const TextScaler.linear(1.0)),
-          child: child ?? const SizedBox.shrink(),
+    return Consumer<ClipboardProvider>(
+      builder: (context, provider, _) {
+        final seed = provider.accentSeedColor;
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          title: 'Lipo',
+          themeMode: ThemeMode.system,
+          theme: _lightTheme(seed),
+          darkTheme: _darkTheme(seed),
+          home: const DashboardPage(),
+          builder: (context, child) {
+            final view = MediaQuery.of(context);
+            return MediaQuery(
+              data: view.copyWith(textScaler: const TextScaler.linear(1.0)),
+              child: child ?? const SizedBox.shrink(),
+            );
+          },
         );
       },
     );
   }
 
-  ThemeData _lightTheme() {
+  ThemeData _lightTheme(Color seedColor) {
     final scheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFF4F8CFF),
+      seedColor: seedColor,
       brightness: Brightness.light,
     );
 
@@ -63,9 +71,9 @@ class LipoApp extends StatelessWidget {
     );
   }
 
-  ThemeData _darkTheme() {
+  ThemeData _darkTheme(Color seedColor) {
     final scheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFF4F8CFF),
+      seedColor: seedColor,
       brightness: Brightness.dark,
     );
 

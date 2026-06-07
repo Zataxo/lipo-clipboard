@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:launch_at_startup/launch_at_startup.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:tray_manager/tray_manager.dart';
 
@@ -17,6 +19,15 @@ void main() async {
 
   final clipboardProvider = ClipboardProvider();
   await clipboardProvider.initialize();
+
+  try {
+    final info = await PackageInfo.fromPlatform();
+    launchAtStartup.setup(
+      appName: info.appName,
+      appPath: Platform.resolvedExecutable,
+    );
+    await launchAtStartup.enable();
+  } catch (_) {}
 
   _overlayChannel.setMethodCallHandler((call) async {
     if (call.method == 'didShow') {

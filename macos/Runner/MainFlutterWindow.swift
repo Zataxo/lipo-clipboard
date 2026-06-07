@@ -1,6 +1,7 @@
 import Cocoa
 import FlutterMacOS
 import Carbon
+import ServiceManagement
 
 class MainFlutterWindow: NSPanel {
   private static let overlaySize = NSSize(width: 560, height: 560)
@@ -25,11 +26,51 @@ class MainFlutterWindow: NSPanel {
     
     RegisterGeneratedPlugins(registry: flutterViewController)
     
-    let channel = FlutterMethodChannel(
+    let launchAtStartupChannel = FlutterMethodChannel(
+      name: "launch_at_startup",
+      binaryMessenger: flutterViewController.engine.binaryMessenger
+    )
+    launchAtStartupChannel.setMethodCallHandler { (call: FlutterMethodCall, result: @escaping FlutterResult) in
+      switch call.method {
+      case "launchAtStartup":
+        result(nil)
+      case "launchAtStartupIsEnabled":
+        if #available(macOS 13.0, *) {
+          result(SMAppService.mainApp.status == .enabled)
+        } else {
+          result(false)
+        }
+      case "launchAtStartupSetEnabled":
+        guard let args = call.arguments as? [String: Any],
+              let setEnabledValue = args["setEnabledValue"] as? Bool else {
+          result(FlutterError(code: "bad_args", message: "Missing setEnabledValue", details: nil))
+          return
+        }
+
+        if #available(macOS 13.0, *) {
+          do {
+            if setEnabledValue {
+              try SMAppService.mainApp.register()
+            } else {
+              try SMAppService.mainApp.unregister()
+            }
+            result(nil)
+          } catch {
+            result(FlutterError(code: "launch_at_startup_error", message: error.localizedDescription, details: nil))
+          }
+        } else {
+          result(FlutterError(code: "unsupported", message: "macOS 13+ required for launch-at-startup without a helper app.", details: nil))
+        }
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
+    let windowChannel = FlutterMethodChannel(
       name: "lipo/window",
       binaryMessenger: flutterViewController.engine.binaryMessenger
     )
-    channel.setMethodCallHandler { [weak self] (call: FlutterMethodCall, result: @escaping FlutterResult) in
+    windowChannel.setMethodCallHandler { [weak self] (call: FlutterMethodCall, result: @escaping FlutterResult) in
         guard let self = self else {
           result(FlutterError(code: "unavailable", message: "Window deallocated", details: nil))
           return
